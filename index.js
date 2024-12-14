@@ -31,7 +31,12 @@ async function run() {
       const jobApplicationCollection = client.db('job-portal').collection('job_applications');
 
       app.get('/jobs', async (req, res) => {
-          const cursor = jobsCollection.find();
+        const email = req.query.email;
+        let query = {};
+        if (email) {
+            query = { hr_email: email }
+        }
+        const cursor = jobsCollection.find(query);
           const result = await cursor.toArray();
           res.send(result);
       });
@@ -55,12 +60,46 @@ async function run() {
      })
       
       //job-application
+      //to get application count and my application
       app.post('/job-applications', async (req, res) => {
         const application = req.body;
         const result = await jobApplicationCollection.insertOne(application);
-        res.send(result);
-    })
 
+        // Not the best way (use aggregate) 
+        // skip --> it
+        const id = application.job_id;
+        const query = { _id: new ObjectId(id) }
+        const job = await jobsCollection.findOne(query);
+        let newCount = 0;
+        if (job.applicationCount) {
+            newCount = job.applicationCount + 1;
+        }
+        else {
+            newCount = 1;
+        }
+
+        // now update the job info
+        const filter = { _id: new ObjectId(id) };
+        const updatedDoc = {
+            $set: {
+                applicationCount: newCount
+            }
+        }
+
+        const updateResult = await jobsCollection.updateOne(filter, updatedDoc);
+
+        res.send(result);
+    });
+   
+    //to get all the applicant details
+    app.get('/job-applications/jobs/:job_id', async (req, res) => {
+      const jobId = req.params.job_id;
+      const query = { job_id: jobId }
+      const result = await jobApplicationCollection.find(query).toArray();
+      res.send(result);
+  })
+
+   //my application data section
     app.get('/job-application', async (req, res) => {
       const email = req.query.email;
       const query = { applicant_email: email }
