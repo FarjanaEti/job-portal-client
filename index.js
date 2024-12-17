@@ -11,9 +11,29 @@ app.use(cors({
   origin:['http://localhost:5173'],
   credentials:true
 }));
-app.use(express.json());
-app.use(cookieParser())
 
+app.use(express.json());
+app.use(cookieParser());
+const logger=(req,res,next)=>{
+   //console.log('Inside the logger')
+   next();
+}
+
+const verifyToken=(req,res,next)=>{
+  console.log('token', req.cookies)
+  const token=req?.cookies?.token;
+  if(!token){
+    return res.status(401).send({message: 'UnAuthorized'})
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET,(err,decoded)=>{
+    if(err){
+      return res.status(401).send({message: 'UnAuthorized'})
+    }
+    req.user=decoded;//
+    next();
+  })
+}
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.dv2hq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -33,16 +53,24 @@ async function run() {
     await client.db("admin").command({ ping: 1 });
 
      //APIs for authentication
-     app.post('/jwt',async (req,res)=>{
+     app.post('/jwt',logger, async (req,res)=>{
+      //console.log('now in apis')
       const user=req.body;
-      const token=jwt.sign(user, process.env.JWT_SECRET, {expiresIn:'1h'} )
+      const token=jwt.sign(user, process.env.JWT_SECRET,
+      {expiresIn:'5d'} )
+     // console.log('JWT_SECRET:', process.env.JWT_SECRET);
       res.cookie('token',token, {
       httpOnly:true,
       secure:false
-      })
-      res.send({success:true})
+      }).send({success:true})
      })
-
+     
+     app.post('/logout',(req,res)=>{
+      res.clearCookie('token',{
+        httpOnly:true,
+      secure:false
+      }).send({success:true})
+     })
       // jobs related apis
       const jobsCollection = client.db('job-portal').collection('jobs');
       const jobApplicationCollection = client.db('job-portal').collection('job_applications');
@@ -117,10 +145,14 @@ async function run() {
   })
 
    //my application data section
-    app.get('/job-application', async (req, res) => {
+    app.get('/job-application',verifyToken,async (req, res) => {
       const email = req.query.email;
       const query = { applicant_email: email }
-      console.log('server cookie', req.cookies)
+
+      if(req.user.email !== req.query.email){//token email !=query email
+        return res.status(403).send({message: 'forbidden access'})
+      }
+      console.log('server cookie', req.cookies)//client theke ciikie ase
       const result = await jobApplicationCollection.find(query).toArray();
        // fokira way to aggregate data
        for (const application of result) {
